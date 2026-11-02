@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>RL Rate Limiter — Live Simulator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg:     #07090f;  --bg2: #0b0f1a;  --bg3: #0f1625;  --bg4: #141d2e;
+      --border: #1a2535;  --b2:  #1f2e42;  --b3:  #243345;
+      --text:   #c5d2e0;  --t2:  #6e8299;  --t3:  #3d5068;
+      --green:  #2ea043;  --green2: #56d364;
+      --blue:   #388bfd;  --blue2:  #79c0ff;
+      --orange: #e3843a;  --red:    #da3633;  --red2: #ff7b72;
+      --yellow: #bb8009;  --yel2:   #e3b341;
+      --purple: #a371f7;  --teal:   #2fada7;  --teal2: #56d8d8;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; overflow: hidden; }
+
+    /* ────────── SPLASH SCREEN ────────── */
+    #splash {
+      position: fixed; inset: 0; z-index: 999;
+      background: var(--bg);
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px;
+      transition: opacity .5s, visibility .5s;
+    }
+    #splash.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+    .splash-logo { font-size: 64px; animation: float 3s ease-in-out infinite; }
+    @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-10px)} }
+    .splash-title { font-size: 26px; font-weight: 800; color: #e6edf3; letter-spacing: -0.5px; text-align: center; }
+    .splash-sub    { font-size: 13px; color: var(--t2); text-align: center; max-width: 400px; line-height: 1.6; }
+    .splash-select-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: center; }
+    .splash-label { font-size: 12px; color: var(--t2); }
+    .splash-select {
+      background: var(--bg3); border: 1px solid var(--b2); color: var(--text);
+      font-family: 'Inter',sans-serif; font-size: 13px; padding: 8px 14px; border-radius: 8px; cursor: pointer;
+    }
+    .btn-launch {
+      padding: 14px 40px; border-radius: 10px; font-size: 15px; font-weight: 700;
+      border: none; cursor: pointer; font-family: 'Inter',sans-serif;
+      background: linear-gradient(135deg, #238636, #2ea043);
+      color: #fff; letter-spacing: .3px;
+      box-shadow: 0 4px 24px rgba(46,160,67,.35);
+      transition: transform .15s, box-shadow .15s;
+    }
+    .btn-launch:hover { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(46,160,67,.5); }
+    .btn-launch:active { transform: translateY(0); }
+    .splash-chips { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+    .chip {
+      background: var(--bg3); border: 1px solid var(--b2); border-radius: 20px;
+      padding: 4px 12px; font-size: 11px; color: var(--t2);
+    }
+    .chip b { color: var(--text); }
+
+    /* ────────── MAIN APP ────────── */
+    #app { display: flex; flex-direction: column; height: 100vh; opacity: 0; transition: opacity .5s; }
+    #app.visible { opacity: 1; }
+
+    /* ─ TOPBAR ─ */
+    .topbar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 20px; height: 48px;
+      background: var(--bg2); border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .topbar-left { display: flex; align-items: center; gap: 10px; }
+    .tb-icon { font-size: 18px; }
+    .tb-title { font-size: 13px; font-weight: 700; color: #e6edf3; }
+    .tb-sub   { font-size: 10px; color: var(--t2); margin-left: 6px; }
+
+    .topbar-right { display: flex; align-items: center; gap: 8px; }
+    .tb-scenario-badge {
+      background: var(--bg3); border: 1px solid var(--b2);
+      border-radius: 20px; padding: 3px 12px; font-size: 11px; font-weight: 600;
+      color: var(--yel2);
+    }
+    .tb-running {
+      display: flex; align-items: center; gap: 5px;
+      background: var(--bg3); border: 1px solid var(--b2);
+      border-radius: 20px; padding: 3px 10px; font-size: 11px; color: var(--t2);
+    }
+    .pulse-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green2); box-shadow: 0 0 8px var(--green2); animation: blink 1.2s ease-in-out infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+    .btn-sm {
+      padding: 4px 12px; border-radius: 6px; font-size: 11px; font-weight: 600;
+      border: none; cursor: pointer; font-family: 'Inter',sans-serif; transition: all .15s;
+    }
+    .btn-stop-sm  { background: #4a1010; color: var(--red2); border: 1px solid var(--red); }
+    .btn-stop-sm:hover { background: var(--red); color: #fff; }
+    .btn-reset-sm { background: var(--bg3); color: var(--t2); border: 1px solid var(--b2); }
+    .btn-reset-sm:hover { color: var(--text); }
+    .sc-pick { background: var(--bg3); border: 1px solid var(--b2); color: var(--text); font-family:'Inter',sans-serif; font-size: 11px; padding: 4px 8px; border-radius: 6px; cursor: pointer; }
+
+    /* ─ BODY LAYOUT ─ */
+    .body { display: grid; grid-template-columns: 290px 1fr 270px; flex: 1; overflow: hidden; }
+
+    /* ─ PANEL ─ */
+    .panel { border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+    .panel:last-child { border-right: none; }
+    .ph {
+      padding: 7px 12px; border-bottom: 1px solid var(--border);
+      font-size: 9px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--t2);
+      display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
+    }
+    .pb { flex: 1; overflow-y: auto; padding: 8px; }
+    .pb::-webkit-scrollbar { width: 3px; }
+    .pb::-webkit-scrollbar-thumb { background: var(--b2); border-radius: 3px; }
+
+    /* ─ CLIENT CARDS ─ */
+    .client-grid { display: flex; flex-direction: column; gap: 4px; }
+    .cc {
+      background: var(--bg3); border: 1px solid var(--border); border-radius: 7px;
+      padding: 7px 9px 7px 12px; position: relative; overflow: hidden;
+      transition: border-color .25s, background .25s;
+    }
+    .cc::before { content:''; position:absolute; left:0; top:0; bottom:0; width:3px; border-radius:3px 0 0 3px; }
+    .cc.normal::before { background: var(--green2); }
+    .cc.bursty::before { background: var(--yel2); }
+    .cc.bot::before    { background: var(--red2); }
+    .cc.st-admitted { border-color: #1a3d24; background: #0a1610; }
+    .cc.st-blocked  { border-color: #3d1515; background: #160909; }
+
+    .cc-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px; }
+    .cc-id  { font-size: 11px; font-weight: 600; color: #dde8f0; font-family: 'JetBrains Mono',monospace; }
+    .cc-tag { font-size: 8px; font-weight: 700; padding: 2px 6px; border-radius: 8px; text-transform: uppercase; letter-spacing: .07em; }
+    .cc-tag.normal { background: #0b2215; color: var(--green2); border: 1px solid #1a3d24; }
+    .cc-tag.bursty { background: #231a08; color: var(--yel2);   border: 1px solid #3d2e0f; }
+    .cc-tag.bot    { background: #230808; color: var(--red2);   border: 1px solid #3d1515; }
+
+    .cc-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 3px; margin-bottom: 4px; }
+    .cc-stat .v { font-size: 11px; font-weight: 700; font-family: 'JetBrains Mono',monospace; }
+    .cc-stat .l { font-size: 8px; color: var(--t3); margin-top: 1px; }
+
+    .cc-rbar { height: 2px; background: var(--bg4); border-radius: 2px; overflow: hidden; margin-bottom: 4px; }
+    .cc-rfill { height: 100%; border-radius: 2px; transition: width .3s, background .3s; }
+
+    .cc-status { font-size: 9px; font-weight: 600; padding: 1px 6px; border-radius: 8px; display: inline-block; }
+    .cc-status.admitted { background: #1a3d24; color: var(--green2); }
+    .cc-status.blocked  { background: #3d1515; color: var(--red2); }
+    .cc-status.idle     { background: var(--bg4); color: var(--t3); }
+    .cc-action { font-size: 8px; color: var(--t3); margin-left: 5px; }
+
+    /* ─ PERSONA LEGEND ─ */
+    .legend { display: flex; gap: 10px; padding: 5px 12px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+    .leg-item { display: flex; align-items: center; gap: 4px; font-size: 9px; color: var(--t2); }
+    .leg-dot  { width: 7px; height: 7px; border-radius: 2px; }
+
+    /* ─ CENTER ─ */
+    .center { display: flex; flex-direction: column; overflow: hidden; }
+
+    /* ─ KPI BAR ─ */
+    .kpi-bar { display: grid; grid-template-columns: repeat(6,1fr); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+    .kpi { padding: 9px 12px; border-right: 1px solid var(--border); }
+    .kpi:last-child { border-right: none; }
+    .kv { font-size: 19px; font-weight: 800; color: #e6edf3; font-family: 'JetBrains Mono',monospace; line-height: 1; }
+    .kl { font-size: 8px; color: var(--t3); text-transform: uppercase; letter-spacing: .1em; margin-top: 3px; }
+    .ks { font-size: 10px; color: var(--t2); margin-top: 2px; }
+
+    /* ─ CHART AREA ─ */
+    .charts { flex: 1; display: grid; grid-template-rows: 1fr 1fr; padding: 8px; gap: 8px; overflow: hidden; }
+    .chart-box {
+      background: var(--bg2); border: 1px solid var(--border); border-radius: 8px;
+      padding: 8px 10px; display: flex; flex-direction: column; min-height: 0;
+    }
+    .ct { font-size: 9px; font-weight: 700; color: var(--t2); text-transform: uppercase; letter-spacing: .1em; margin-bottom: 5px; flex-shrink: 0; }
+    .chart-box canvas { flex: 1; min-height: 0; }
+
+    /* ─ RIGHT PANEL ─ */
+    .right { display: flex; flex-direction: column; overflow: hidden; }
+
+    /* ─ AGENT ─ */
+    .agent-box { padding: 10px 12px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+    .ag-action { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .ag-icon { font-size: 26px; }
+    .ag-name { font-size: 13px; font-weight: 700; line-height: 1.2; }
+    .ag-desc { font-size: 9px; color: var(--t2); margin-top: 2px; line-height: 1.4; }
+
+    .state-row { display: flex; gap: 3px; flex-wrap: wrap; margin-bottom: 8px; }
+    .sbin {
+      background: var(--bg4); border: 1px solid var(--b2); border-radius: 4px;
+      padding: 3px 6px; font-size: 9px; font-family: 'JetBrains Mono',monospace; color: var(--t2);
+    }
+    .sbin b { color: var(--blue2); font-weight: 600; }
+    .sbin.hi { border-color: var(--red); background: #230808; }
+    .sbin.hi b { color: var(--red2); }
+    .sbin.med { border-color: #3d2e0f; background: #1a1204; }
+    .sbin.med b { color: var(--yel2); }
+
+    .qv-section {}
+    .qv-title { font-size: 8px; color: var(--t3); text-transform: uppercase; letter-spacing: .1em; margin-bottom: 5px; }
+    .qv-bars  { display: flex; flex-direction: column; gap: 3px; }
+    .qv-row   { display: flex; align-items: center; gap: 5px; }
+    .qv-name  { font-size: 9px; color: var(--t2); width: 100px; flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .qv-bg    { flex: 1; height: 7px; background: var(--bg4); border-radius: 4px; overflow: hidden; }
+    .qv-fill  { height: 100%; border-radius: 4px; transition: width .4s, background .4s; }
+    .qv-val   { font-size: 9px; font-family: 'JetBrains Mono',monospace; color: var(--t2); width: 50px; text-align: right; }
+
+    /* ─ GAUGES ─ */
+    .gauges { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+    .gauge  { background: var(--bg3); border: 1px solid var(--border); border-radius: 7px; padding: 7px 9px; }
+    .gv { font-size: 15px; font-weight: 700; font-family: 'JetBrains Mono',monospace; }
+    .gl { font-size: 8px; color: var(--t3); text-transform: uppercase; margin-top: 2px; }
+    .gbar-bg { height: 3px; background: var(--bg4); border-radius: 3px; overflow: hidden; margin-top: 4px; }
+    .gbar    { height: 100%; border-radius: 3px; transition: width .4s; }
+
+    /* ─ LOG ─ */
+    .log-wrap { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    .log-body { flex: 1; overflow-y: auto; padding: 6px 10px; }
+    .log-body::-webkit-scrollbar { width: 3px; }
+    .log-body::-webkit-scrollbar-thumb { background: var(--b2); }
+    .log-entry { display: flex; gap: 6px; padding: 2px 0; border-bottom: 1px solid var(--bg3); font-size: 9px; line-height: 1.45; }
+    .log-ts  { color: var(--t3); font-family: 'JetBrains Mono',monospace; width: 34px; flex-shrink: 0; }
+    .log-msg.info   { color: var(--t2); }
+    .log-msg.agent  { color: var(--blue2); }
+    .log-msg.system { color: var(--purple); }
+
+    /* ─ EPOCH FLASH ─ */
+    .epoch-flash {
+      position: fixed; top: 56px; left: 50%; transform: translateX(-50%);
+      background: var(--bg3); border: 1px solid var(--b2);
+      border-radius: 8px; padding: 5px 18px; font-size: 11px;
+      color: var(--text); z-index: 100; opacity: 0;
+      transition: opacity .25s; pointer-events: none;
+    }
+    .epoch-flash.show { opacity: 1; }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════════ SPLASH ══════════════════ -->
+<div id="splash">
+  <div class="splash-logo">🛡️</div>
+  <div class="splash-title">Risk-Aware RL Rate Limiting Simulator</div>
+  <div class="splash-sub">
+    Watch a trained Q-Learning agent make real-time admission decisions
+    across 16 virtual clients — Normal users, Bursty traffic &amp; Bots.
+  </div>
+  <div class="splash-chips">
+    <div class="chip">🧠 <b>Q-Learning Agent</b> (51 states)</div>
+    <div class="chip">🟢 <b>8</b> Normal clients</div>
+    <div class="chip">🟡 <b>4</b> Bursty clients</div>
+    <div class="chip">🔴 <b>4</b> Bot clients</div>
+    <div class="chip">⚡ 1-second control epochs</div>
+  </div>
+  <div class="splash-select-row">
+    <span class="splash-label">Traffic scenario:</span>
+    <select class="splash-select" id="splash-scenario">
+      <option value="mixed">🌐 Mixed — Production blend</option>
+      <option value="normal">✅ Normal — Baseline</option>
+      <option value="burst">⚡ Burst — Flash crowd</option>
+      <option value="abuse">🤖 Abuse — Bot attack</option>
+      <option value="overload">🔥 Overload — Stress test</option>
+    </select>
+  </div>
+  <button class="btn-launch" id="btn-launch">▶ Start Simulation</button>
+</div>
+
+<!-- ══════════════════ APP ══════════════════ -->
+<div id="app">
+  <!-- TOPBAR -->
+  <div class="topbar">
+    <div class="topbar-left">
+      <span class="tb-icon">🛡️</span>
+      <span class="tb-title">RL Rate Limiting Simulator</span>
+      <span class="tb-sub">22AIE401 · Q-Learning Adaptive Policy</span>
+    </div>
+    <div class="topbar-right">
+      <div class="tb-running"><div class="pulse-dot"></div><span id="tb-status">Running</span></div>
+      <span class="tb-scenario-badge" id="tb-scenario">MIXED</span>
+      <select class="sc-pick" id="app-scenario">
+        <option value="mixed">Mixed</option>
+        <option value="normal">Normal</option>
+        <option value="burst">Burst</option>
+        <option value="abuse">Abuse</option>
+        <option value="overload">Overload</option>
+      </select>
+      <button class="btn-sm btn-stop-sm" id="btn-stop">⏹ Stop</button>
+      <button class="btn-sm btn-reset-sm" id="btn-reset">↺ Reset</button>
+    </div>
+  </div>
+
+  <!-- BODY -->
+  <div class="body">
+
+    <!-- ── LEFT: CLIENTS ── -->
+    <div class="panel">
+      <div class="ph">
+        Virtual Clients
+        <span id="client-summary" style="font-size:9px;font-weight:500;color:var(--t2)">16 clients</span>
+      </div>
+      <div class="legend">
+        <div class="leg-item"><div class="leg-dot" style="background:var(--green2)"></div>Normal ×8</div>
+        <div class="leg-item"><div class="leg-dot" style="background:var(--yel2)"></div>Bursty ×4</div>
+        <div class="leg-item"><div class="leg-dot" style="background:var(--red2)"></div>Bot ×4</div>
+      </div>
+      <div class="pb">
+        <div class="client-grid" id="client-grid"></div>
+      </div>
+    </div>
+
+    <!-- ── CENTER ── -->
+    <div class="center">
+      <div class="kpi-bar">
+        <div class="kpi"><div class="kv" id="kv-accept" style="color:var(--green2)">—</div><div class="kl">Accept Rate</div><div class="ks" id="ks-admit">—</div></div>
+        <div class="kpi"><div class="kv" id="kv-block"  style="color:var(--red2)">—</div><div class="kl">Block Rate</div><div class="ks" id="ks-block">—</div></div>
+        <div class="kpi"><div class="kv" id="kv-cpu" style="color:var(--blue2)">—</div><div class="kl">CPU</div><div class="ks" id="ks-lat">—ms lat</div></div>
+        <div class="kpi"><div class="kv" id="kv-rps" style="color:var(--teal2)">—</div><div class="kl">Epoch RPS</div><div class="ks" id="ks-queue">queue 0</div></div>
+        <div class="kpi"><div class="kv" id="kv-mult" style="color:var(--purple)">—</div><div class="kl">Multiplier</div><div class="ks" id="ks-quota">quota —/s</div></div>
+        <div class="kpi"><div class="kv" id="kv-t" style="color:var(--t2)">0s</div><div class="kl">Elapsed</div><div class="ks" id="ks-scenario" style="color:var(--yel2)">—</div></div>
+      </div>
+      <div class="charts">
+        <div class="chart-box">
+          <div class="ct">📊 Throughput — Admitted vs Blocked per epoch</div>
+          <canvas id="ch-tp"></canvas>
+        </div>
+        <div class="chart-box">
+          <div class="ct">💻 Backend Health — CPU % &amp; Latency/20ms</div>
+          <canvas id="ch-be"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── RIGHT: AGENT + GAUGES + LOG ── -->
+    <div class="right panel">
+      <div class="ph">RL Agent — Decision Engine</div>
+
+      <div class="agent-box">
+        <div class="ag-action">
+          <div class="ag-icon" id="ag-icon">⏸</div>
+          <div>
+            <div class="ag-name" id="ag-name" style="color:var(--t2)">Starting...</div>
+            <div class="ag-desc" id="ag-desc">Waiting for first epoch</div>
+          </div>
+        </div>
+
+        <div style="font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px;">State Representation (r, b, c, cpu, lat)</div>
+        <div class="state-row" id="state-row">
+          <div class="sbin">r=<b>?</b></div><div class="sbin">b=<b>?</b></div>
+          <div class="sbin">c=<b>?</b></div><div class="sbin">cpu=<b>?</b></div><div class="sbin">lat=<b>?</b></div>
+        </div>
+
+        <div class="qv-section">
+          <div class="qv-title">Q-Values — Action Preference</div>
+          <div class="qv-bars" id="qv-bars">
+            <div style="color:var(--t3);font-size:10px;padding:4px 0;">Awaiting first epoch...</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="ph" style="border-top:1px solid var(--border)">Backend Health</div>
+      <div class="gauges">
+        <div class="gauge"><div class="gv" id="g-cpu" style="color:var(--blue2)">—</div><div class="gl">CPU %</div><div class="gbar-bg"><div class="gbar" id="gb-cpu" style="width:0;background:var(--blue2)"></div></div></div>
+        <div class="gauge"><div class="gv" id="g-lat" style="color:var(--teal2)">—</div><div class="gl">Latency</div><div class="gbar-bg"><div class="gbar" id="gb-lat" style="width:0;background:var(--teal2)"></div></div></div>
+        <div class="gauge"><div class="gv" id="g-q" style="color:var(--yel2)">—</div><div class="gl">Queue</div><div class="gbar-bg"><div class="gbar" id="gb-q" style="width:0;background:var(--yel2)"></div></div></div>
+        <div class="gauge"><div class="gv" id="g-err" style="color:var(--orange)">—</div><div class="gl">Error %</div><div class="gbar-bg"><div class="gbar" id="gb-err" style="width:0;background:var(--orange)"></div></div></div>
+      </div>
+
+      <div class="log-wrap">
+        <div class="ph">Activity Log — Agent Decisions</div>
+        <div class="log-body" id="log-body">
+          <div style="color:var(--t3);font-size:10px;padding:8px 0;text-align:center;">Simulation will log here...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- epoch flash -->
+<div class="epoch-flash" id="epoch-flash">⚡ Epoch</div>
+
+<script>
+// ──────────────── CHART SETUP ────────────────
+const baseOpts = {
+  animation: false, responsive: true, maintainAspectRatio: false,
+  plugins: { legend: { labels: { color:'#6e8299', font:{size:9,family:'Inter'}, boxWidth:10, padding:8 } } },
+  scales: {
+    x: { ticks:{color:'#3d5068',font:{size:8,family:'JetBrains Mono'},maxTicksLimit:8}, grid:{color:'#0b0f1a'}, border:{color:'#1a2535'} },
+    y: { ticks:{color:'#3d5068',font:{size:8}}, grid:{color:'#0b0f1a'}, border:{color:'#1a2535'} }
+  }
+};
+
+const tpChart = new Chart(document.getElementById('ch-tp').getContext('2d'), {
+  type: 'bar',
+  data: {
+    labels:[],
+    datasets:[
+      {label:'Admitted', data:[], backgroundColor:'rgba(86,211,100,0.7)', borderColor:'#56d364', borderWidth:1},
+      {label:'Blocked',  data:[], backgroundColor:'rgba(248,81,73,0.6)',  borderColor:'#ff7b72', borderWidth:1}
+    ]
+  },
+  options: { ...baseOpts, scales:{...baseOpts.scales, x:{...baseOpts.scales.x,stacked:true}, y:{...baseOpts.scales.y,stacked:true}} }
+});
+
+const beChart = new Chart(document.getElementById('ch-be').getContext('2d'), {
+  type:'line',
+  data:{
+    labels:[],
+    datasets:[
+      {label:'CPU %',       data:[], borderColor:'#388bfd', backgroundColor:'rgba(56,139,253,.07)', tension:.4, fill:true, pointRadius:0, borderWidth:1.5},
+      {label:'Latency /20', data:[], borderColor:'#2fada7', backgroundColor:'rgba(47,173,167,.05)', tension:.4, fill:true, pointRadius:0, borderWidth:1.5}
+    ]
+  },
+  options: baseOpts
+});
+
+// ──────────────── CONSTANTS ────────────────
+const A_NAMES  = ['Increase (+25%)','Maintain','Decrease (-25%)','Throttle (Risk)','Block High-Risk'];
+const A_ICONS  = ['📈','⏸','📉','🔻','🚫'];
+const A_COLORS = ['#56d364','#388bfd','#e3b341','#e3843a','#ff7b72'];
+const A_DESCS  = [
+  'Quota expanded +25% — backend has headroom, rewarding legitimate surge',
+  'Holding current quota — system in equilibrium, monitoring',
+  'Quota reduced -25% — load is climbing, tightening admission',
+  'Throttling by risk score — high-risk clients get reduced quota',
+  'Emergency block — all high-risk clients rejected, backend protection'
+];
+const BIN_NAMES = [
+  ['Low','Med','High'],['Steady','Burst'],
+  ['LowRisk','ModRisk','HiRisk'],['Normal','Elevated','Overload'],
+  ['Fast','Slow','SLA-Breach']
+];
+const BIN_LABELS = ['r','b','c','cpu','lat'];
+const BIN_CLASSES = [
+  ['','med','hi'],['','med'],
+  ['','med','hi'],['','med','hi'],
+  ['','med','hi']
+];
+
+// ──────────────── RENDER QVALS ────────────────
+function renderQvals(qvals, active) {
+  const mn = Math.min(...qvals), mx = Math.max(...qvals), rng = mx-mn || 1;
+  document.getElementById('qv-bars').innerHTML = qvals.map((v,i) => {
+    const pct = Math.max(4, ((v-mn)/rng)*100);
+    const on  = i === active;
+    return `<div class="qv-row">
+      <div class="qv-name" style="color:${on?A_COLORS[i]:'var(--t3)'};font-weight:${on?700:400}">${on?'▶ ':''}${A_NAMES[i]}</div>
+      <div class="qv-bg"><div class="qv-fill" style="width:${pct}%;background:${on?A_COLORS[i]:'var(--b2)'}"></div></div>
+      <div class="qv-val" style="color:${on?A_COLORS[i]:'var(--t3)'}">${v.toFixed(0)}</div>
+    </div>`;
+  }).join('');
+}
+
+// ──────────────── RENDER CLIENTS ────────────────
+function riskColor(r) { return r>=.65?'var(--red2)':r>=.35?'var(--yel2)':'var(--green2)'; }
+
+function renderClients(clients) {
+  const grid = document.getElementById('client-grid');
+  let adm=0, blk=0;
+  clients.forEach(c => {
+    if (c.status==='admitted') adm++;
+    if (c.status==='blocked')  blk++;
+
+    let el = document.getElementById('cc-'+c.id);
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'cc-'+c.id;
+      grid.appendChild(el);
+    }
+    const rc = riskColor(c.risk);
+    el.className = `cc ${c.persona} st-${c.status}`;
+    el.innerHTML = `
+      <div class="cc-top">
+        <span class="cc-id">${c.id}</span>
+        <span class="cc-tag ${c.persona}">${c.persona}</span>
+      </div>
+      <div class="cc-row">
+        <div class="cc-stat"><div class="v" style="color:${rc}">${(c.risk*100).toFixed(0)}%</div><div class="l">Risk</div></div>
+        <div class="cc-stat"><div class="v" style="color:var(--green2)">${c.accept_pct}%</div><div class="l">Accept</div></div>
+        <div class="cc-stat"><div class="v" style="color:var(--red2)">${c.blocked}</div><div class="l">Blocked</div></div>
+      </div>
+      <div class="cc-rbar"><div class="cc-rfill" style="width:${c.risk*100}%;background:${rc}"></div></div>
+      <span class="cc-status ${c.status}">${c.status==='admitted'?'✅ Admitted':c.status==='blocked'?'🚫 Blocked':'⏸ Idle'}</span>
+      <span class="cc-action">${c.action||''}</span>`;
+  });
+  document.getElementById('client-summary').textContent = `✅ ${adm} admitted · 🚫 ${blk} blocked`;
+}
+
+// ──────────────── EPOCH FLASH ────────────────
+let flashTimer = null;
+function showFlash(txt) {
+  const el = document.getElementById('epoch-flash');
+  el.textContent = txt;
+  el.classList.add('show');
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => el.classList.remove('show'), 800);
+}
+
+// ──────────────── MAIN UPDATE ────────────────
+function update(d) {
+  // KPIs
+  const blkPct = (100-d.accept_pct).toFixed(1);
+  document.getElementById('kv-accept').textContent = d.accept_pct + '%';
+  document.getElementById('ks-admit').textContent  = d.total_admitted.toLocaleString() + ' admitted';
+  document.getElementById('kv-block').textContent  = blkPct + '%';
+  document.getElementById('ks-block').textContent  = d.total_blocked.toLocaleString() + ' blocked';
+
+  const cpuEl = document.getElementById('kv-cpu');
+  cpuEl.textContent = d.cpu.toFixed(1) + '%';
+  cpuEl.style.color = d.cpu>=85?'var(--red2)':d.cpu>=65?'var(--yel2)':'var(--blue2)';
+  document.getElementById('ks-lat').textContent   = d.latency.toFixed(0) + 'ms lat';
+  document.getElementById('kv-rps').textContent   = d.epoch_admitted;
+  document.getElementById('ks-queue').textContent = 'queue ' + d.queue;
+  document.getElementById('kv-mult').textContent  = d.rate_mult.toFixed(2) + '×';
+  document.getElementById('ks-quota').textContent = 'quota ' + d.eff_quota + '/s';
+  document.getElementById('kv-t').textContent     = Math.round(d.t) + 's';
+  document.getElementById('ks-scenario').textContent = d.scenario.toUpperCase();
+
+  // Charts
+  if (d.ts.labels.length) {
+    tpChart.data.labels       = d.ts.labels;
+    tpChart.data.datasets[0].data = d.ts.admitted;
+    tpChart.data.datasets[1].data = d.ts.blocked;
+    tpChart.update('none');
+    beChart.data.labels       = d.ts.labels;
+    beChart.data.datasets[0].data = d.ts.cpu;
+    beChart.data.datasets[1].data = d.ts.latency.map(v=>v/20);
+    beChart.update('none');
+  }
+
+  // RL Agent panel
+  document.getElementById('ag-icon').textContent = A_ICONS[d.action];
+  const nameEl = document.getElementById('ag-name');
+  nameEl.textContent = d.action_name;
+  nameEl.style.color = A_COLORS[d.action];
+  document.getElementById('ag-desc').textContent = A_DESCS[d.action];
+
+  // State bins
+  document.getElementById('state-row').innerHTML = d.state_idx.map((v,i) => {
+    const cls = BIN_CLASSES[i][v] || '';
+    return `<div class="sbin ${cls}">${BIN_LABELS[i]}=<b>${BIN_NAMES[i][v]||v}</b></div>`;
+  }).join('');
+
+  renderQvals(d.qvals, d.action);
+
+  // Gauges
+  const cpuC = d.cpu>=85?'var(--red2)':d.cpu>=65?'var(--yel2)':'var(--blue2)';
+  document.getElementById('g-cpu').textContent    = d.cpu.toFixed(1)+'%';
+  document.getElementById('g-cpu').style.color    = cpuC;
+  document.getElementById('gb-cpu').style.width   = Math.min(100,d.cpu)+'%';
+  document.getElementById('gb-cpu').style.background = cpuC;
+  document.getElementById('g-lat').textContent    = d.latency.toFixed(0)+'ms';
+  document.getElementById('gb-lat').style.width   = Math.min(100,d.latency/25)+'%';
+  document.getElementById('g-q').textContent      = d.queue;
+  document.getElementById('gb-q').style.width     = Math.min(100,d.queue/5)+'%';
+  document.getElementById('g-err').textContent    = d.err_rate.toFixed(1)+'%';
+  document.getElementById('gb-err').style.width   = Math.min(100,d.err_rate*10)+'%';
+
+  // Clients
+  renderClients(d.clients);
+
+  // Log
+  document.getElementById('log-body').innerHTML =
+    [...d.log].reverse().map(e =>
+      `<div class="log-entry"><span class="log-ts">${e.ts}s</span><span class="log-msg ${e.level}">${e.msg}</span></div>`
+    ).join('');
+
+  // Epoch flash
+  showFlash(`⚡ Epoch ${Math.round(d.t)}s — ${d.action_name}`);
+}
+
+// ──────────────── SSE ────────────────
+let evtSource = null;
+
+function connectSSE() {
+  if (evtSource) { evtSource.close(); evtSource = null; }
+  evtSource = new EventSource('/api/events');
+  evtSource.onmessage = e => { try { update(JSON.parse(e.data)); } catch(err) { console.error(err); } };
+  evtSource.onerror   = () => { console.warn('SSE disconnected, retrying...'); setTimeout(connectSSE, 2000); };
+}
+
+// ──────────────── SPLASH LAUNCH ────────────────
+document.getElementById('btn-launch').addEventListener('click', async () => {
+  const sc = document.getElementById('splash-scenario').value;
+
+  // 1. Hide splash
+  document.getElementById('splash').classList.add('hidden');
+  // 2. Show app
+  const app = document.getElementById('app');
+  app.classList.add('visible');
+  // 3. Set scenario
+  document.getElementById('app-scenario').value = sc;
+  document.getElementById('tb-scenario').textContent = sc.toUpperCase();
+
+  // 4. Start simulation on backend
+  await fetch(`/api/start?scenario=${sc}`, { method: 'POST' });
+
+  // 5. Connect SSE
+  connectSSE();
+});
+
+// ──────────────── TOPBAR CONTROLS ────────────────
+document.getElementById('btn-stop').addEventListener('click', async () => {
+  await fetch('/api/stop', { method: 'POST' });
+  document.getElementById('tb-status').textContent = 'Stopped';
+  document.querySelector('.pulse-dot').style.background = 'var(--t3)';
+  document.querySelector('.pulse-dot').style.animation = 'none';
+});
+
+document.getElementById('btn-reset').addEventListener('click', () => {
+  if (evtSource) { evtSource.close(); evtSource = null; }
+  fetch('/api/reset', { method: 'POST' });
+  // Return to splash
+  document.getElementById('splash').classList.remove('hidden');
+  document.getElementById('app').classList.remove('visible');
+  document.getElementById('client-grid').innerHTML = '';
+  document.getElementById('log-body').innerHTML = '<div style="color:var(--t3);font-size:10px;padding:8px 0;text-align:center;">Simulation will log here...</div>';
+  tpChart.data.labels=[]; tpChart.data.datasets.forEach(d=>d.data=[]); tpChart.update();
+  beChart.data.labels=[]; beChart.data.datasets.forEach(d=>d.data=[]); beChart.update();
+});
+
+document.getElementById('app-scenario').addEventListener('change', async e => {
+  const sc = e.target.value;
+  document.getElementById('tb-scenario').textContent = sc.toUpperCase();
+  await fetch(`/api/scenario/${sc}`, { method:'POST' });
+});
+</script>
+</body>
+</html>

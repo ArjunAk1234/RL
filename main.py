@@ -69,6 +69,8 @@ def train_agent(
                   f"Avg Reward (last 20): {avg_rew:7.1f} | Epsilon: {agent.epsilon:.3f} | States Explored: {len(agent.q_table)}")
 
     agent.save(save_path)
+    # Persist training curves so DQN trainer can load them for side-by-side comparison
+    np.save("models/tab_training_history.npy", np.array([episode_rewards, epsilons]))
     print(f"[Model Saved] Policy serialized to {save_path} ({len(agent.q_table)} state entries).")
     return agent, episode_rewards, epsilons
 
@@ -163,10 +165,19 @@ def main():
     print("  EXPERIMENTS COMPLETED SUCCESSFULLY!")
     print("  Artifacts generated:")
     print("    - models/q_table.pkl")
+    print("    - models/tab_training_history.npy")
     print("    - results/benchmark_results.csv")
     print("    - results/training_curve.png")
     print("    - results/dynamic_stress_timeline.png")
     print("    - results/benchmark_comparison.png")
+    print("="*80)
+    print("\n  NEXT STEPS:")
+    print("  1. Run DQN comparison:")
+    print("     python3 train_dqn.py")
+    print("  2. Launch live FastAPI gateway:")
+    print("     uvicorn rl_rate_limiter.gateway:app --port 8000")
+    print("     Then open: http://localhost:8000/dashboard")
+    print("     Test with: curl -X POST http://localhost:8000/proxy/resource -H 'X-Client-ID: user_1'")
     print("=" * 80)
 
 if __name__ == "__main__":

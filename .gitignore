@@ -58,3 +58,15 @@ htmlcov/
 
 # Logs
 *.log
+
+# Reinforcement Learning & Machine Learning Checkpoints
+*.pkl
+*.npy
+*.pt
+*.pth
+*.checkpoint
+
+# Runtime artifacts and local servers
+.cache/
+tmp/
+*.pid
